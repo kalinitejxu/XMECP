@@ -1,5 +1,11 @@
-import sys,numpy,math
+import os,sys,numpy,math
 inp=sys.argv[1]
+
+with open('input.tmp','w') as gen:
+    with open(inp,'r') as rawinp:
+        for line in rawinp.readlines():
+            gen.write(line.lower())
+os.system(f'mv input.tmp {inp}')
 
 sasf=False
 
@@ -38,6 +44,7 @@ dynamic         =      mecp_wordlist[8]
 pf_alpha        =      mecp_wordlist[9]
 pf_sigma        =      mecp_wordlist[10]
 pf_thresh       =      mecp_wordlist[11]
+sf_thresh       =      mecp_wordlist[12]
 
 pf_thresh_step  =          pf_thresh[0]
 pf_thresh_grad  =          pf_thresh[1]

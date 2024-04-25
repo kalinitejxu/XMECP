@@ -1,3 +1,5 @@
+import os
+
 def jobtype(inputfile):
     job=['mecp','qmmm']
 
@@ -52,9 +54,9 @@ def section_control(inputfile):
             elif L[0]=='#end':
                 control=False
         if control and len(L)!=0:
-            if L[0]=='job_name':
+            if L[0]=='jobname':
                 job_name=L[1]
-            elif L[0]=='system_name':
+            elif L[0]=='sysname':
                 system_name=L[1]
             elif L[0]=='nproc':
                 nproc=int(L[1])
@@ -110,6 +112,7 @@ def section_mecp(inputfile):
                                     # Note: When if_td1 or if_td2 is set to False, unrestricted Kohn-Sham method is applied, which is by-default and recommended.
     uks=False                       # Whether to calculation unrestricted singlet ground state.
     sf=False                        # Spin-flip TD-DFT.
+    sf_thresh=1.2
     dynamic=True                    # Use dynamic gradient projection algorithm.
     pf_alpha=0.02                   # Alpha for penalty function algorithm.
     pf_sigma=3.50                   # Sigma for penalty function algorithm.
@@ -152,6 +155,8 @@ def section_mecp(inputfile):
             elif L[0]=='sf' or L[0]=='spin-flip':
                 if L[1]=='true':
                     sf=True
+            elif L[0]=='sf_thresh':
+                sf_thresh=float(L[1])
             elif L[0]=='dynamic':
                 if L[1]=='false':
                     dynamic=False
@@ -168,7 +173,8 @@ def section_mecp(inputfile):
                    if_td1,if_td2,uks,
                    sf,
                    dynamic,
-                   pf_alpha,pf_sigma,pf_thresh]
+                   pf_alpha,pf_sigma,pf_thresh,
+                   sf_thresh]
     return mecp_wordlist
 
 def section_templates(inputfile):

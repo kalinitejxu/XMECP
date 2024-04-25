@@ -29,7 +29,7 @@ def spin_flip(xyzfile,step,incnroots=0):
         extrakeys=open(qm_template,'r')
         for line in extrakeys.readlines():
             L=line.split()
-            if len(line)!=0:
+            if len(L)!=0:
                 probe=line[0]
                 if probe[0]=='%':
                     flag=True

@@ -13,7 +13,7 @@ from parameters import *
 def spin_flip(xyzfile,step,incnroots=0):
     global job_name,system_name,nproc,qm_charge,qm_mult,qm_template
     global mecp_wordlist
-    global sf_ref_mult
+    global sf_ref_mult,sf_thresh
     global atm
 
     print(f'Spin-flip (flip-down) is turned on. Multiplicity of reference state is {sf_ref_mult}.')
@@ -91,7 +91,8 @@ def spin_flip(xyzfile,step,incnroots=0):
         s=(mecp_wordlist[0+i]-1)/2
         s2=s*(s+1)
         for j in range(len(s2val)):
-            if s2-0.8 <= s2val[j] <= s2+1.2:
+            print (f'debug: {s2-(2-sf_thresh)} {s2val[j]} {s2+sf_thresh}')
+            if s2-(2-sf_thresh) <= s2val[j] <= s2+sf_thresh:
                 count+=1
                 if count==mecp_wordlist[2+i]:
                     ijroots.append(1+j)
@@ -169,7 +170,7 @@ def inp4mecp(X0,step=1):
         extrakeys=open(qm_template,'r')
         for line in extrakeys.readlines():
             L=line.split()
-            if len(line)!=0:
+            if len(L)!=0:
                 if L[0]=='$rem':
                     flag=True
                     continue
@@ -185,7 +186,7 @@ def inp4mecp(X0,step=1):
         extrakeys=open(qm_template,'r')
         for line in extrakeys.readlines():
             L=line.split()
-            if len(line)!=0:
+            if len(L)!=0:
                 probe=line[0]
                 if probe[0]=='$' and L[0]!='$end' and L[0]!='$rem':
                     flag=True
@@ -326,8 +327,8 @@ def mecpstep(XNew,step):
         print(f'Run Q-Chem force calculation for state {1+i}.')
         print(f'State {1+i}: {mecp_wordlist[i]} {mecp_wordlist[2+i]}')
 
-        inp=f'system_name_step{step}_state{1+i}.inp'
-        out=f'system_name_step{step}_state{1+i}.out'
+        inp=f'{system_name}_step{step}_state{1+i}.inp'
+        out=f'{system_name}_step{step}_state{1+i}.out'
         
         tddft=False
         iroot=0
@@ -371,5 +372,6 @@ def mecpstep(XNew,step):
 
     os.system(f'mv *step*.inp scratch-{job_name}')
     os.system(f'mv *step*.out scratch-{job_name}')
-    
+    os.system(f'{system_name}_step{step}.geom')
+
     return e1,g1,e2,g2

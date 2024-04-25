@@ -175,252 +175,236 @@ def mecpforce(e1,g1,e2,g2):
     return numpy.array(frc0)
 ### <<< Calculate force for MECP search <<< ###
 
-def stepsize(X0,X1,factor=1):
+def stepsize(oldX,newX,factor=1):
     global maxstep
-    dX=X1-X0
+    dX=newX-oldX
     dX*=factor
     stepsize_norm=numpy.linalg.norm(dX)
     if stepsize_norm>maxstep:
-        print(f'Current stepsize: {stepsize_norm} is reduced to max stepsize.\n')
+        print(f'Reduce current stepsize {stepsize_norm:.4f} to max stepsize {maxstep:.4f}.\n')
         dX=dX*maxstep/numpy.linalg.norm(dX)
-    return X0+dX
+    return oldX+dX
 
-def hessian_upd(B0,dF,dX,method='psb'):
+def hessian_upd(old_hess,dF,dX,method='psb'):
     global algorithm
     if algorithm=='mecp_bpupd1':
         global gmeans
         dX=dX.T
         dh=numpy.mat(gmeans[-1]-gmeans[-2]).T
-        B1=B0+(dh*dh.T)/(dh.T*dX)-(B0*dX)*(dX.T*Bk)/(dX.T*B0*dX)
+        new_hess=old_hess+(dh*dh.T)/(dh.T*dX)-(old_hess*dX)*(dX.T*Bk)/(dX.T*old_hess*dX)
         global xs,ys
         x,y=xs[-1],ys[-1]
         E=numpy.identity(numpy.shape(x)[0])
         xm=numpy.mat(x)
         ym=numpy.mat(y)
         P=E-xm.T*xm-ym.T*ym
-        B1=P*B1*P
+        new_hess=P*new_hess*P
     else:
 #       if algorithm=='mecp_pf':
 #           method='bofill'
         if method=='psb':
-            B1=B0+((dF.T-B0*dX.T)*dX+dX.T*(dF.T-B0*dX.T).T)/(dX*dX.T)-\
-                  (float(dX*(dF.T-B0*dX.T))*dX.T*dX)/float(dX*dX.T)**2
+            new_hess=old_hess+((dF.T-old_hess*dX.T)*dX+dX.T*(dF.T-old_hess*dX.T).T)/(dX*dX.T)-\
+                  (float(dX*(dF.T-old_hess*dX.T))*dX.T*dX)/float(dX*dX.T)**2
         elif method=='bfgs':
-            B1=B0+float(1.0/(dX*dF.T))*\
-                 (float(1.0+(dF*B0*dF.T)/(dX*dF.T))*(dX.T*dX)-\
-                                     (dX.T*dF*B0+B0*dF.T*dX))
+            new_hess=old_hess+float(1.0/(dX*dF.T))*\
+                 (float(1.0+(dF*old_hess*dF.T)/(dX*dF.T))*(dX.T*dX)-\
+                                     (dX.T*dF*old_hess+old_hess*dF.T*dX))
         elif method=='bofill':
-            B1=B0+((dF.T-B0*dX.T)*dX+dX.T*(dF.T-B0*dX.T).T)/(dX*dX.T)-\
-                  (float(dX*(dF.T-B0*dX.T))*dX.T*dX)/float(dX*dX.T)**2
-            B2=B0+(dF.T-B0*dX.T)*(dF.T-B0*dX.T).T/float((dF.T-B0*dX.T).T*dX.T)
-            phi=float((dF.T-B0*dX.T).T*dX.T)**2/\
-                float((dF.T-B0*dX.T).T*(dF.T-B0*dX.T))/float(dX*dX.T)
-            B1=phi*B2+(1-phi)*B1
-    return B1
+            new_hess=old_hess+((dF.T-old_hess*dX.T)*dX+dX.T*(dF.T-old_hess*dX.T).T)/(dX*dX.T)-\
+                  (float(dX*(dF.T-old_hess*dX.T))*dX.T*dX)/float(dX*dX.T)**2
+            tmp_hess=old_hess+(dF.T-old_hess*dX.T)*(dF.T-old_hess*dX.T).T/float((dF.T-old_hess*dX.T).T*dX.T)
+            phi=float((dF.T-old_hess*dX.T).T*dX.T)**2/\
+                float((dF.T-old_hess*dX.T).T*(dF.T-old_hess*dX.T))/float(dX*dX.T)
+            new_hess=phi*tmp_hess+(1-phi)*new_hess
+    return new_hess
 
-def prop_bfgs(X0,F0,B0):
+def bfgs(oldX,oldF,oldH,step):
+    print(f'Entering BFGS step {step}\n')
     scaledX=15.0
     global algorithm
     if 'mecp' in algorithm:
         scaledX=15.0
     elif algorithm=='opt':
         scaledX=0.01
-    dX=-numpy.linalg.solve(B0,F0)
+    dX=-numpy.linalg.solve(oldH,oldF)
     if numpy.linalg.norm(dX)>0.1:
         dX=dX*0.1/numpy.linalg.norm(dX)
-    X1=X0+scaledX*dX
-    return X1
-def bfgs(X0,F0,B0,step):
-    print(f'Entering BFGS step {step}\n')
-    X1=prop_bfgs(X0,F0,B0)
-    X1=stepsize(X0,X1)
-    dX=X1-X0
-    if 'mecp' in algorithm:
-        E1,G1,E2,G2=mecpstep(X1,step)
-        F1=mecpforce(E1,G1,E2,G2)
-        dF=numpy.mat(F1-F0)
-        B1=hessian_upd(B0,dF,dX)
-        return X1,F1,B1,E1,E2
-    elif algorithm=='opt':
-        E1,G1=optstep(X1,step)
-        F1=numpy.array(G1)
-        dF=numpy.mat(F1-F0)
-        B1=hessian_upd(B0,dF,dX)
-        return X1,F1,B1,E1,0.0
+    newX=stepsize(oldX,oldX+scaledX*dX)
+    dX=newX-oldX
 
-def prop_gdiis(Xs,Fs,Hs):
-    # Produce a new geometry based on the GDIIS algorithm, see https://manual.q-chem.com/5.3/A1.S7.html
-    nX=len(Xs)
-    nA=numpy.shape(Xs[-1])[1]
-    if len(Hs)!=nX:
-        raise Exception('Runtime exception: H and X dimensions are different.')
-    EMat=numpy.mat(numpy.zeros(shape=(nX,nA)))
-    Hm=sum(Hs)/nX
-    for i in range(nX):
-        EMat[i]=(Hm.I*numpy.mat(Fs[i]).T).flatten()
-    L1=numpy.mat(numpy.ones(nX))
-    BMat=numpy.block([[EMat*EMat.T,L1.T],
-                      [L1,numpy.mat([0])]])
-    y=numpy.append(numpy.zeros(nX),1)
-    c=numpy.linalg.solve(BMat,y)
-    c=numpy.delete(c,-1)
-    X2=numpy.mat(numpy.zeros(nA))
-    F2=numpy.mat(numpy.zeros(nA))
-    H2=numpy.mat(numpy.zeros(shape=(nA,nA)))
-    for i in range(nX):
-        X2+=Xs[i]*c[i]
-        F2+=Fs[i]*c[i]
-        H2+=Hs[i]*c[i]
-    X1=X2-(Hm.I*numpy.mat(F2).T).flatten()
-    return X1
-def prop_gediis(Xs,Fs,Hs,Es):
-    # Produce a new geometry based on the GEDIIS algorithm (J. Chem. Theory Comput. 2006, 2, 835-839)
-    # Note that the energy to be minimized should not be E1 or E2, but produced from the pritimive function of G (not implemented yet)
-    nX=len(Xs)
-    nA=numpy.shape(Xs[-1])[1]
-    if len(Hs)!=nX:
-        raise Exception('Runtime exception: H and X numbers are different.')
-    EMat=numpy.mat(numpy.zeros(shape=(nX,nX)))
-    for i in range(nX):
-        EMat[i,i]=0
-        for j in range(i+1,nX):
-            EMat[i,j]=-1*numpy.dot(Fs[i]-Fs[j],
-                                   numpy.array((Xs[i]-Xs[j])).flatten())  # Gs is force rather than gradient
-            EMat[j,i]=EMat[i,j]
-    L1=numpy.mat(numpy.ones(nX))
-    BMat=numpy.block([[EMat,L1.T],\
-                      [L1,numpy.mat([0])]])
-    y=numpy.append(-1*numpy.array(Es),1)
-    c=numpy.linalg.solve(BMat,y)
-    c=numpy.delete(c,-1)  # delete the last element, lambda, in c vector
-    X2=numpy.mat(numpy.zeros(nA))
-    F2=numpy.mat(numpy.zeros(nA))
-    for i in range(nX):
-        X2+=Xs[i]*c[i]
-        F2+=Fs[i]*c[i]
-    X1=X2+F1
-    return X1
-def gdiis(Xs,Fs,Bs,Es,step,gediis=False):
+    if 'mecp' in algorithm:
+        E1,G1,E2,G2=mecpstep(newX,step)
+        newF=mecpforce(E1,G1,E2,G2)
+        dF=numpy.mat(newF-oldF)
+        newH=hessian_upd(oldH,dF,dX)
+        return newX,newF,newH,E1,E2
+    elif algorithm=='opt':
+        E1,G1=optstep(newX,step)
+        newF=numpy.array(G1)
+        dF=numpy.mat(newF-oldF)
+        newH=hessian_upd(oldH,dF,dX)
+        return newX,newF,newH,E1,0.0
+
+def gdiis(Xhist,Fhist,Hhist,Ehist,step,gediis=False):
     global conver
     thresh_rms_g=conver[4]
-    reduced_factor=0.5
-    
-    X1=prop_gdiis(Xs,Fs,Bs)
+
+    # generate newX for gdiis
+    nX=len(Xhist)
+    nA=numpy.shape(Xhist[-1])[1]
+    matrix_ene=numpy.mat(numpy.zeros(shape=(nX,nA)))
+    Hm=sum(Hhist)/nX
+    for i in range(nX):
+        matrix_ene[i]=(Hm.I*numpy.mat(Fhist[i]).T).flatten()
+    matrix_1=numpy.mat(numpy.ones(nX))
+    matrix_hess=numpy.block([[matrix_ene*matrix_ene.T,matrix_1.T],
+                      [matrix_1,numpy.mat([0])]])
+    y=numpy.append(numpy.zeros(nX),1)
+    c=numpy.linalg.solve(matrix_hess,y)
+    c=numpy.delete(c,-1)
+    tmpX=numpy.mat(numpy.zeros(nA))
+    tmpF=numpy.mat(numpy.zeros(nA))
+    tmpH=numpy.mat(numpy.zeros(shape=(nA,nA)))
+    for i in range(nX):
+        tmpX+=Xhist[i]*c[i]
+        tmpF+=Fhist[i]*c[i]
+        tmpH+=Hhist[i]*c[i]
+    newX=tmpX-(Hm.I*numpy.mat(tmpF).T).flatten()
+    # update newX for gediis
     if gediis:
-        X2=prop_gediis(Xs,Fs,Bs,Es)
-        X1=X1*0.5+X2*0.5
+        nX=len(Xhist)
+        nA=numpy.shape(Xhist[-1])[1]
+        matrix_ene=numpy.mat(numpy.zeros(shape=(nX,nX)))
+        for i in range(nX):
+            matrix_ene[i,i]=0
+            for j in range(i+1,nX):
+                matrix_ene[i,j]=-1*numpy.dot(Fhist[i]-Fhist[j],
+                                       numpy.array((Xhist[i]-Xhist[j])).flatten())
+                matrix_ene[j,i]=matrix_ene[i,j]
+        matrix_1=numpy.mat(numpy.ones(nX))
+        matrix_hess=numpy.block([[matrix_ene,matrix_1.T],\
+                          [matrix_1,numpy.mat([0])]])
+        y=numpy.append(-1*numpy.array(Ehist),1)
+        c=numpy.linalg.solve(matrix_hess,y)
+        c=numpy.delete(c,-1)
+        tmpX=numpy.mat(numpy.zeros(nA))
+        tmpF=numpy.mat(numpy.zeros(nA))
+        for i in range(nX):
+            tmpX+=Xhist[i]*c[i]
+            tmpF+=Fhist[i]*c[i]
+        newX=(newX+tmpX+newF)/2
         print(f'\nEntering GEDIIS Step {step}\n')
     else:
         print(f'\nEntering GDIIS Step {step}\n')
 
     factor=1.0
-    if numpy.linalg.norm(Fs)<thresh_rms_g*10:
-        factor=reduced_factor
-    X1=stepsize(Xs[-1],X1,factor)
+    if numpy.linalg.norm(Fhist)<thresh_rms_g*10:
+        factor=0.5
+    newX=stepsize(Xhist[-1],newX,factor)
 
-    dX=X1-Xs[-1]
+    dX=newX-Xhist[-1]
     if 'mecp' in algorithm:
-        E1,G1,E2,G2=mecpstep(X1,step)
-        F1=mecpforce(E1,G1,E2,G2)
-        dF=numpy.mat(F1-Fs[-1])
-        B1=hessian_upd(Bs[-1],dF,dX)
-        return X1,F1,B1,E1,E2
+        E1,G1,E2,G2=mecpstep(newX,step)
+        newF=mecpforce(E1,G1,E2,G2)
+        dF=numpy.mat(newF-Fhist[-1])
+        newH=hessian_upd(Hhist[-1],dF,dX)
+        return newX,newF,newH,E1,E2
     elif algorithm=='opt':
-        E1,G1=optstep(X1,step)
-        F1=numpy.array(G1)
-        dF=numpy.mat(F1-Fs[-1])
-        B1=hessian_upd(Bs[-1],dF,dX)
-        return X1,F1,B1,E1,0.0
+        E1,G1=optstep(newX,step)
+        newF=numpy.array(G1)
+        dF=numpy.mat(newF-Fhist[-1])
+        newH=hessian_upd(Hhist[-1],dF,dX)
+        return newX,newF,newH,E1,0.0
 
-def geom_upd(X1,cfile,chemsh_template):
+def geom_upd(newX,cfile,chemsh_template):
     numatm,atm,xyz=readc(cfile)
     act_region=active_region(chemsh_template)
     for i in range(len(act_region)):
         for j in range(3):
-            xyz[3*act_region[i]-3+j]=X1[0,3*i+j]
+            xyz[3*act_region[i]-3+j]=newX[0,3*i+j]
     return atm,xyz
 
-def opt(X0):
+def opt(oldX):
     step=1
     global opt_method,maxcycle,restart,restart_from
     global algorithm,layer
 
     # Cut out active region for optimization.
     if layer=='qmmm':
-        X0=geom.active_xyz(X0)
+        oldX=geom.active_xyz(oldX)
 
     # Run optimization.
-    X0=numpy.mat(X0)
-    B0=numpy.eye(numpy.shape(X0)[1])
-    X1,F1,B1,E1,E2=[None,None,None,0,0]
-    Xs,Bs,Fs,Es=[[],[],[],[]]
+    oldX=numpy.mat(oldX)
+    oldH=numpy.eye(numpy.shape(oldX)[1])
+    newX,newF,newH,E1,E2=[None,None,None,0,0]
+    Xhist,Bhist,Fhist,Ehist=[[],[],[],[]]
     
-    F0=None
-    # Run first step to get F0.
+    oldF=None
+    # Run first step to get oldF.
     if 'mecp' in algorithm:
-        E1,G1,E2,G2=mecpstep(X0,step)
+        E1,G1,E2,G2=mecpstep(oldX,step)
         print('Initial structure')
         print(f'Energy of state 1:{f"{E1:.8f}".rjust(16)} a.u.')
         print(f'Energy of state 2:{f"{E2:.8f}".rjust(16)} a.u.')
         print(f'Energy difference:{f"{(E2-E1):.8f}".rjust(16)} a.u.')
-        F0=mecpforce(E1,G1,E2,G2)
+        oldF=mecpforce(E1,G1,E2,G2)
     elif algorithm=='opt':
-        E1,G1=optstep(X0,step)
+        E1,G1=optstep(oldX,step)
         print('Initial structure')
         print(f'Energy:{f"{E1:.8f}".rjust(16)}')
-        F0=numpy.array(G1)
+        oldF=numpy.array(G1)
 
     # Entering iteration.
     while True:
         step+=1
         if opt_method=='bfgs' or step<3:
-            X1,F1,B1,E1,E2=bfgs(X0,F0,B0,step)
+            newX,newF,newH,E1,E2=bfgs(oldX,oldF,oldH,step)
         elif opt_method=='gdiis':
-            X1,F1,B1,E1,E2=gdiis(Xs,Fs,Bs,Es,step)
+            newX,newF,newH,E1,E2=gdiis(Xhist,Fhist,Bhist,Ehist,step)
         elif opt_method=='gediis':
-            X1,F1,B1,E1,E2=gdiis(Xs,Fs,Bs,Es,step,gediis=True)
-        if len(Xs)>3:
-            Xs.pop(0)
-            Bs.pop(0)
-            Fs.pop(0)
-            Es.pop(0)
-        Xs.append(X1)
-        Bs.append(B1)
-        Fs.append(F1)
-        Es.append(E1)
+            newX,newF,newH,E1,E2=gdiis(Xhist,Fhist,Bhist,Ehist,step,gediis=True)
+        if len(Xhist)>3:
+            Xhist.pop(0)
+            Bhist.pop(0)
+            Fhist.pop(0)
+            Ehist.pop(0)
+        Xhist.append(newX)
+        Bhist.append(newH)
+        Fhist.append(newF)
+        Ehist.append(E1)
 
-        if isconver(E1,E2,X0,X1,F1):
+        if isconver(E1,E2,oldX,newX,newF):
             break
 
         if step==maxcycle:
             print('Maximium number of steps exceeded.')
             break
-        X0=X1
-        F0=F1
-        B0=B1
+        oldX=newX
+        oldF=newF
+        oldH=newH
 
-def isconver(E1,E2,X0,X1,G1):
+def isconver(E1,E2,oldX,newX,G1):
     global algorithm,layer
     if layer=='qm':
         if algorithm=='mecp_pf':
-            return isconver_pf(E1,E2,X0,X1,G1)
+            return isconver_pf(E1,E2,oldX,newX,G1)
         else:
-            return isconver_standard(E1,E2,X0,X1,G1)
+            return isconver_standard(E1,E2,oldX,newX,G1)
     if layer=='qmmm':
         import geom
         qmG1=geom.qm_from_active(G1)
-        qmX0=geom.qm_from_active(numpy.matrix.tolist(X0)[0])
-        qmX1=geom.qm_from_active(numpy.matrix.tolist(X1)[0])
-        qmX0=numpy.mat(qmX0)
-        qmX1=numpy.mat(qmX1)
+        qmoldX=geom.qm_from_active(numpy.matrix.tolist(oldX)[0])
+        qmnewX=geom.qm_from_active(numpy.matrix.tolist(newX)[0])
+        qmoldX=numpy.mat(qmoldX)
+        qmnewX=numpy.mat(qmnewX)
         # Check QM region first.
         qmConverged=False
         save_stdout=sys.stdout
         with open('trash.txt','w') as sys.stdout:
             if algorithm=='mecp_pf':
-                qmConverged=isconver_pf(E1,E2,qmX0,qmX1,qmG1)
+                qmConverged=isconver_pf(E1,E2,qmoldX,qmnewX,qmG1)
             else:
-                qmConverged=isconver_standard(E1,E2,qmX0,qmX1,qmG1)
+                qmConverged=isconver_standard(E1,E2,qmoldX,qmnewX,qmG1)
         sys.stdout=save_stdout
         if qmConverged:
             print('QM region has already converged.')
@@ -428,11 +412,11 @@ def isconver(E1,E2,X0,X1,G1):
             print('QM region has not converged yet.')
         # Check the whole system and print convergence infomation.
         if algorithm=='mecp_pf':
-            return isconver_pf(E1,E2,X0,X1,G1)
+            return isconver_pf(E1,E2,oldX,newX,G1)
         else:
-            return isconver_standard(E1,E2,X0,X1,G1)
+            return isconver_standard(E1,E2,oldX,newX,G1)
 
-def isconver_standard(E1,E2,X0,X1,G1):
+def isconver_standard(E1,E2,oldX,newX,G1):
     dim=len(G1)
     global thresh_de,thresh_rms_g,thresh_max_g,thresh_rms,thresh_max_dis
     # Calculate convergence criterions.
@@ -444,12 +428,12 @@ def isconver_standard(E1,E2,X0,X1,G1):
         g=abs(G1[i])
         if g>max_g:
             max_g=g
-    rms=numpy.linalg.norm(X0-X1)/math.sqrt(dim)
+    rms=numpy.linalg.norm(oldX-newX)/math.sqrt(dim)
     max_dis=0.0
     for i in range(int(dim/3)):
         dis=0.0
         for j in range(3):
-            dis+=(X0[0,3*i+j]-X1[0,3*i+j])**2
+            dis+=(oldX[0,3*i+j]-newX[0,3*i+j])**2
         dis=math.sqrt(dis)
         if dis>max_dis:
             max_dis=dis
@@ -496,7 +480,7 @@ def isconver_standard(E1,E2,X0,X1,G1):
     else:
         return False
 
-def isconver_pf(E1,E2,X0,X1,G1):
+def isconver_pf(E1,E2,oldX,newX,G1):
     global natms
     global thresh_de,pf_thresh_step,pf_thresh_grad
 
@@ -534,12 +518,12 @@ def isconver_pf(E1,E2,X0,X1,G1):
     func2=numpy.dot(-G1,u)
     func3=numpy.linalg.norm(-G1-numpy.dot(-G1,u)*u)
 
-    rms=numpy.linalg.norm(X0-X1)/math.sqrt(natms*3)
+    rms=numpy.linalg.norm(oldX-newX)/math.sqrt(natms*3)
     max_dis=0.0
     for i in range(natms):
         dis=0.0
         for j in range(3):
-            dis+=(X0[0,3*i+j]-X1[0,3*i+j])**2
+            dis+=(oldX[0,3*i+j]-newX[0,3*i+j])**2
         dis=math.sqrt(dis)
         if dis>max_dis:
             max_dis=dis
