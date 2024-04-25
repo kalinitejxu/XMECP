@@ -252,3 +252,4 @@ def ESF_eandg(item):
     # ESF gradient.
     ESF_grad=intensity*charge*normvec
     return ESF_ene,ESF_grad # in a.u.
+

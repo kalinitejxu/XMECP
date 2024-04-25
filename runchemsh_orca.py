@@ -583,3 +583,4 @@ def optstep(XNew,step):
     g1=geom.active_gradient(g1)
 
     return e1,g1
+
